@@ -47,6 +47,10 @@ public class Param<T> {
         return value;
     }
 
+    public boolean isNull() {
+        return getValue() == null;
+    }
+
     public T optValue() {
         return optValue(null);
     }

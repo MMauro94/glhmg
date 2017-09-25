@@ -4,10 +4,18 @@ import mmauro.glhmg.Utils;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import sun.reflect.generics.tree.Tree;
 
-import java.math.BigDecimal;
+import java.awt.geom.Point2D;
+import java.lang.reflect.Array;
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
+import java.util.TreeSet;
 
 /**
  * Created by Mauro on 28/08/2017.
@@ -19,12 +27,12 @@ public final class Location implements Comparable<Location> {
     @NotNull
     private final Instant timestamp;
     @NotNull
-    private final BigDecimal latitude, longitude;
+    private final LatLng latLng;
     private final int accuracy;
     @Nullable
     private final Integer altitude, heading;
 
-    private Location(@NotNull Instant timestamp, @NotNull BigDecimal latitude, @NotNull BigDecimal longitude, int accuracy, @Nullable Integer altitude, @Nullable Integer heading) {
+    private Location(@NotNull Instant timestamp, @NotNull LatLng latLng, int accuracy, @Nullable Integer altitude, @Nullable Integer heading) {
         if (accuracy < 0) {
             throw new IllegalArgumentException("accuracy < 0: " + accuracy);
         } else if (heading != null && heading < 0) {
@@ -33,8 +41,7 @@ public final class Location implements Comparable<Location> {
             throw new IllegalArgumentException("heading >= 360: " + heading);
         }
         this.timestamp = timestamp;
-        this.latitude = latitude;
-        this.longitude = longitude;
+        this.latLng = latLng;
         this.accuracy = accuracy;
         this.altitude = altitude;
         this.heading = heading;
@@ -46,16 +53,10 @@ public final class Location implements Comparable<Location> {
         return timestamp;
     }
 
-    @Contract(pure = true)
     @NotNull
-    public BigDecimal getLatitude() {
-        return latitude;
-    }
-
     @Contract(pure = true)
-    @NotNull
-    public BigDecimal getLongitude() {
-        return longitude;
+    public LatLng getLatLng() {
+        return latLng;
     }
 
     @Contract(pure = true)
@@ -103,7 +104,7 @@ public final class Location implements Comparable<Location> {
 
     @NotNull
     public String getGoogleApiLatLon() {
-        return latitude.toPlainString() + "," + longitude.toPlainString();
+        return latLng.getLatitudeStr() + "," + latLng.getLongitudeStr();
     }
 
     public void setPrevious(@Nullable Location previous) {
@@ -123,8 +124,24 @@ public final class Location implements Comparable<Location> {
      * @return a new location where all its values are copied, except for <code>next</code> and <code>previous</code>, which are set to null
      */
     @NotNull
+    @Contract(pure = true)
     public Location asOrphan() {
-        return new Location(timestamp, latitude, longitude, accuracy, altitude, heading);
+        return new Location(timestamp, latLng, accuracy, altitude, heading);
+    }
+
+    public boolean isVisible(@NotNull MapParams mapParams) {
+        return isVisible(mapParams, 1.01f);
+    }
+
+    public boolean isVisible(@NotNull MapParams mapParams, float tollerance) {
+        final double scale = Math.pow(2, mapParams.getZoom());
+        final MapSize mapSize = mapParams.getSize();
+
+        final WorldCoordinate centerPx = mapParams.getLocation().getLatLng().toWorldCoordinate();
+        final WorldCoordinate nePoint = new WorldCoordinate(centerPx.getX() + ((mapSize.width / 2d) / scale) * tollerance, centerPx.getY() - ((mapSize.height / 2d) / scale) * tollerance);
+        final WorldCoordinate swPoint = new WorldCoordinate(centerPx.getX() - ((mapSize.width / 2d) / scale) * tollerance, centerPx.getY() + ((mapSize.height / 2d) / scale) * tollerance);
+
+        return latLng.toWorldCoordinate().isInBounds(nePoint, swPoint);
     }
 
     @NotNull
@@ -133,8 +150,7 @@ public final class Location implements Comparable<Location> {
     public String toString() {
         return "Location{" +
                 "timestamp=" + timestamp +
-                ", latitude=" + latitude +
-                ", longitude=" + longitude +
+                ", latLng=" + latLng +
                 ", accuracy=" + accuracy +
                 ", altitude=" + altitude +
                 ", heading=" + heading +
@@ -151,51 +167,86 @@ public final class Location implements Comparable<Location> {
         return timestamp.compareTo(o.timestamp);
     }
 
-    /**
-     *
-     * @param max the maximum number of nodes
-     * @return the path to pass to the Google Static Map APIs
-     */
+    @Contract(pure = true)
     @NotNull
-    public String getGoogleApiPath(int max) {
-        if (previous != null && max > 1) {
-            return previous.getGoogleApiPath(max - 1) + "|" + getGoogleApiLatLon();
+    public Location getRoot() {
+        if (previous == null) {
+            return this;
         } else {
-            return getGoogleApiLatLon();
+            return previous.getRoot();
+        }
+    }
+
+    @Contract(pure = true)
+    @NotNull
+    public Location getPrevious(int steps) {
+        if (steps < 0) {
+            throw new IllegalArgumentException("steps < 0");
+        } else if (steps == 0 || previous == null) {
+            return this;
+        } else {
+            return previous.getPrevious(steps - 1);
         }
     }
 
     /**
-     * Calculates th distance, in meters, between two locations
-     * @param l1 the first location
-     * @param l2 the second location
-     * @return the number of meters separating the two locations
+     * @return the path to pass to the Google Static Map APIs
      */
-    @Contract(pure = true)
-    public static double getMetersDistance(@NotNull Location l1, @NotNull Location l2) {
-        final double lat1 = l1.latitude.doubleValue();
-        final double lat2 = l2.latitude.doubleValue();
-        final double lon1 = l1.longitude.doubleValue();
-        final double lon2 = l2.longitude.doubleValue();
+    @NotNull
+    public String getGoogleApiPath(@NotNull MapParams mapParams) {
+        return getGoogleApiPath(mapParams, 200);
+    }
 
-        double latDistance = Math.toRadians(lat2 - lat1);
-        double lonDistance = Math.toRadians(lon2 - lon1);
-        double a = Math.sin(latDistance / 2) * Math.sin(latDistance / 2)
-                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
-                * Math.sin(lonDistance / 2) * Math.sin(lonDistance / 2);
-        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        double distance = Utils.EARTH_RADIUS_KM * c * 1000; // convert to meters
+    @NotNull
+    public String getGoogleApiPath(@NotNull MapParams mapParams, int limit) {
+        if (previous == null) {
+            return getGoogleApiLatLon();
+        } else {
+            final TreeSet<Location> arr = new TreeSet<>();
+            Location loc = getRoot();
+            while (loc != previous && !loc.isVisible(mapParams)) {
+                loc = loc.getNext();
+            }
 
+            //This while adds only visible points and entry and exit points to shadow zones
+            boolean lastVisible = true, precAdded = true;
+            Location prec = null;
+            while (loc != this) {
+                final boolean currentVisible = loc.isVisible(mapParams);
+                if (currentVisible && !precAdded) {
+                    arr.add(prec);
+                }
+                if (lastVisible || currentVisible) {
+                    arr.add(loc);
+                    precAdded = true;
+                } else {
+                    precAdded = false;
+                }
 
-        distance = Math.pow(distance, 2);
+                prec = loc;
+                loc = loc.getNext();
+                lastVisible = currentVisible;
+            }
+            arr.add(this);
 
-        return Math.sqrt(distance);
+            final StringBuilder sb = new StringBuilder();
+            boolean first = true;
+            for (Location l : Location.interpolateLocations(arr, limit)) {
+                if (first) {
+                    first = false;
+                } else {
+                    sb.append('|');
+                }
+                sb.append(l.getGoogleApiLatLon());
+            }
+            return sb.toString();
+        }
     }
 
 
     @Contract(pure = true)
     public static double getMetersPerSecSpeed(@NotNull Location l1, @NotNull Location l2) {
-        return getMetersDistance(l1, l2) / (getTimeDifference(l1, l2).toMillis() / 1000d);
+        return LatLng.getMetersDistance(l1.latLng, l2.latLng) / (getTimeDifference(l1, l2).toMillis() / 1000d);
     }
 
     @Contract(pure = true)
@@ -257,12 +308,37 @@ public final class Location implements Comparable<Location> {
      */
     @NotNull
     public static Location interpolateWithTimestamp(@NotNull Location a, @NotNull Location b, @NotNull Instant timestamp) {
-        if (!timestamp.isAfter(a.timestamp)) {
+        if (timestamp.compareTo(a.timestamp) < 0) {
             throw new IllegalArgumentException("timestamp is not after a");
-        } else if (!timestamp.isBefore(b.timestamp)) {
+        } else if (timestamp.compareTo(b.timestamp) > 0) {
             throw new IllegalArgumentException("timestamp is not before b");
         }
         return interpolate(a, b, Duration.between(a.timestamp, timestamp).toNanos() / (float) Duration.between(a.timestamp, b.timestamp).toNanos());
+    }
+
+    @NotNull
+    public static TreeSet<Location> interpolateLocations(@NotNull TreeSet<Location> locations, int limit) {
+        if (locations.size() < 2 || locations.size() <= limit) {
+            return locations;
+        } else {
+            final Duration span = Duration.between(locations.first().timestamp, locations.last().timestamp).dividedBy(limit);
+
+            final TreeSet<Location> ret = new TreeSet<>();
+            Iterator<Location> it = locations.iterator();
+            Location loc = it.next();
+            Location next = it.next();
+            Instant timestamp = loc.timestamp.plus(span);
+            ret.add(loc);
+            while (it.hasNext()) {
+                while (it.hasNext() && !next.timestamp.isAfter(timestamp)) {
+                    loc = next;
+                    next = it.next();
+                }
+                ret.add(Location.interpolateWithTimestamp(loc, next, timestamp));
+                timestamp = timestamp.plus(span);
+            }
+            return ret;
+        }
     }
 
     /**
@@ -287,14 +363,16 @@ public final class Location implements Comparable<Location> {
      */
     @NotNull
     public static Location interpolate(@NotNull Location a, @NotNull Location b, float balancing) {
-        if (balancing <= 0 || balancing >= 1) {
+        if (balancing == 0) {
+            return a;
+        } else if (balancing == 1) {
+            return b;
+        } else if (balancing < 0 || balancing > 1) {
             throw new IllegalArgumentException("Invalid balancing: " + balancing);
         } else if (a.compareTo(b) >= 0) {
             throw new IllegalArgumentException("a.timestamp is not before b.timestamp");
         }
         final Instant timestamp = a.timestamp.plus(Duration.ofNanos(Math.round(Duration.between(a.timestamp, b.timestamp).toNanos() * (double) balancing)));
-        final BigDecimal latitude = a.latitude.add(b.latitude.subtract(a.latitude).multiply(BigDecimal.valueOf(balancing))).setScale(7, BigDecimal.ROUND_HALF_UP);
-        final BigDecimal longitude = a.longitude.add(b.longitude.subtract(a.longitude).multiply(BigDecimal.valueOf(balancing))).setScale(7, BigDecimal.ROUND_HALF_UP);
         final int accuracy = Math.round(a.accuracy + (b.accuracy - a.accuracy) * balancing);
         final Integer altitude;
         if (a.altitude != null && b.altitude != null) {
@@ -308,7 +386,7 @@ public final class Location implements Comparable<Location> {
         } else {
             heading = null;
         }
-        return new Location(timestamp, latitude, longitude, accuracy, altitude, heading);
+        return new Location(timestamp, LatLng.interpolate(a.latLng, b.latLng, balancing), accuracy, altitude, heading);
     }
 
     /**
@@ -318,7 +396,7 @@ public final class Location implements Comparable<Location> {
     public int size() {
         Location location = next;
         int size = 1;
-        while(location != null) {
+        while (location != null) {
             size++;
             location = location.next;
         }
@@ -331,18 +409,18 @@ public final class Location implements Comparable<Location> {
      */
     public static class Builder {
         private Instant timestamp;
-        private BigDecimal latitude, longitude;
+        private Double latitude, longitude;
         private Integer accuracy, altitude, heading;
 
         public void setTimestamp(Instant timestamp) {
             this.timestamp = timestamp;
         }
 
-        public void setLatitude(BigDecimal latitude) {
+        public void setLatitude(double latitude) {
             this.latitude = latitude;
         }
 
-        public void setLongitude(BigDecimal longitude) {
+        public void setLongitude(double longitude) {
             this.longitude = longitude;
         }
 
@@ -367,6 +445,7 @@ public final class Location implements Comparable<Location> {
 
         /**
          * Builds the {@link Location}
+         *
          * @return a new {@link Location} instance
          * @throws IllegalStateException if a necessary attribute hasn't been set
          */
@@ -380,7 +459,7 @@ public final class Location implements Comparable<Location> {
             } else if (accuracy == null) {
                 throw new IllegalStateException("accuracy not specified");
             } else {
-                return new Location(timestamp, latitude, longitude, accuracy, altitude, heading);
+                return new Location(timestamp, new LatLng(latitude, longitude), accuracy, altitude, heading);
             }
         }
     }

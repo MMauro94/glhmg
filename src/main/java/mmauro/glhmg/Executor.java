@@ -4,9 +4,13 @@ import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParseException;
 import mmauro.glhmg.datastruct.Location;
 import mmauro.glhmg.datastruct.Locations;
+import mmauro.glhmg.datastruct.MapParams;
+import mmauro.glhmg.datastruct.MapSize;
+import mmauro.glhmg.datastruct.PathParams;
 import mmauro.glhmg.parse.LocationsParser;
 import mmauro.glhmg.parse.ParseException;
 
+import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 import java.time.Duration;
@@ -27,28 +31,68 @@ public class Executor {
     public final Param<File> outputDirectory = new Param<>(dir -> {
         if (dir.exists() && !dir.isDirectory()) {
             throw new IllegalArgumentException("The given path is not a directory");
-        } else if (!dir.mkdirs()) {
+        } else if (!dir.exists() && !dir.mkdirs()) {
             throw new IllegalArgumentException("Unable to create given directory");
         }
     });
     public final Param<String> googleStaticMapsApiKey = new Param<>(value -> {
         if (value == null) {
-            throw new IllegalArgumentException("API key is required");
+            throw new IllegalArgumentException("API key cannot be null");
         } else if (value.trim().isEmpty()) {
             throw new IllegalArgumentException("API key cannot be empty");
         }
     });
     public final Param<Instant> startTime = new Param<>();
     public final Param<Instant> endTime = new Param<>();
-    public final Param<Duration> interpolation = new Param<>();
+    public final Param<Duration> interpolation = new Param<>(value -> {
+        if (value != null) {
+            if (value.isNegative()) {
+                throw new IllegalArgumentException("Interpolation cannot be negative");
+            } else if (value.isZero()) {
+                throw new IllegalArgumentException("Interpolation cannot be zero");
+            }
+        }
+    });
+    public final Param<Integer> mapZoom = new Param<>(value -> {
+        if (value == null) {
+            throw new IllegalArgumentException("Zoom cannot be null");
+        } else if (value <= 0) {
+            throw new IllegalArgumentException("Zoom must be greater than zero");
+        }
+    });
+    public final Param<MapSize> mapSize = new Param<>(value -> {
+        if (value == null) {
+            throw new IllegalArgumentException("Size cannot be null");
+        }
+    });
+    public final Param<Integer> mapScale = new Param<>(value -> {
+        if (value == null) {
+            throw new IllegalArgumentException("Scale cannot be null");
+        } else if (value <= 0) {
+            throw new IllegalArgumentException("Scale must be greater than zero");
+        }
+    });
+    public final Param<Color> pathColor = new Param<>(value -> {
+        if (value == null) {
+            throw new IllegalArgumentException("PathColor cannot be null");
+        }
+    });
+    public final Param<Integer> pathWeight = new Param<>(value -> {
+        if (value == null) {
+            throw new IllegalArgumentException("PathWeight cannot be null");
+        } else if (value <= 0) {
+            throw new IllegalArgumentException("PathWeight must be greater than zero");
+        }
+    });
 
+    //@NotNull Location location, int zoom, int sizeWidth, int sizeHeight, int scale, @NotNull Color pathColor, int pathWeight
 
     public void execute() {
         OutUtils.standard("Parsing location file...");
         final Locations locations;
         try {
             locations = new LocationsParser(new JsonFactory().createParser(locationHistoryJson.getValue())).getLocations(location ->
-                    (location.getTimestamp().compareTo(startTime.getValue()) >= 0) && (location.getTimestamp().compareTo(endTime.getValue()) <= 0)
+                    (startTime.isNull() || location.getTimestamp().compareTo(startTime.getValue()) >= 0) && (endTime.isNull() || location.getTimestamp().compareTo(endTime.getValue()) <= 0)
             );
         } catch (ParseException | JsonParseException e) {
             OutUtils.err("There has been an error parsing the provided JSON file: " + e.getMessage(), 1, e);
@@ -70,19 +114,15 @@ public class Executor {
             OutUtils.standard("Locations after interpolation: " + withInterpolation.size());
         }
 
+        final PathParams pathParams = new PathParams(pathColor.getValue(), pathWeight.getValue());
         for (Location location : withInterpolation) {
+            final MapParams mapParams = new MapParams(location, mapSize.getValue(), mapZoom.getValue(), mapScale.getValue());
             try {
-                Utils.downloadImage(location);
+                Utils.downloadImage(googleStaticMapsApiKey.getValue(), outputDirectory.getValue(), mapParams, pathParams);
             } catch (IOException e) {
                 OutUtils.err("Error downloading image: " + e.getMessage(), 4, e);
                 return;
             }
-        }
-    }
-
-    public static class MissingParamException extends IllegalStateException {
-        public MissingParamException(String value) {
-            super("Missing " + value);
         }
     }
 }

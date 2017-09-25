@@ -2,6 +2,7 @@ package mmauro.glhmg.parse;
 
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
+import mmauro.glhmg.OutUtils;
 import mmauro.glhmg.datastruct.Location;
 import mmauro.glhmg.datastruct.Locations;
 import org.jetbrains.annotations.NotNull;
@@ -10,8 +11,12 @@ import org.jetbrains.annotations.Nullable;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.Optional;
 import java.util.TreeSet;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -22,12 +27,14 @@ public class LocationsParser {
     /**
      * Divisor of latitude and longitude ints
      */
-    private static final BigDecimal LAT_LON_DIVISOR = BigDecimal.valueOf(10000000);
+    private static final double LAT_LON_DIVISOR = 10000000d;
 
     @NotNull
     private final JsonParser jsonParser;
     private boolean setUp = false;
     private boolean end = false;
+    private int builtLocations = 0;
+
 
     /**
      * Constructs the parser
@@ -139,14 +146,14 @@ public class LocationsParser {
                         break;
                     case "latitudeE7":
                         if (jsonParser.currentToken() == JsonToken.VALUE_NUMBER_INT) {
-                            builder.setLatitude(BigDecimal.valueOf(jsonParser.getLongValue()).divide(LAT_LON_DIVISOR, 7, BigDecimal.ROUND_UNNECESSARY));
+                            builder.setLatitude(jsonParser.getLongValue() / LAT_LON_DIVISOR);
                         } else {
                             throw new ParseException("Unexpected token " + jsonParser.currentToken() + " for latitudeE7 value");
                         }
                         break;
                     case "longitudeE7":
                         if (jsonParser.currentToken() == JsonToken.VALUE_NUMBER_INT) {
-                            builder.setLongitude(BigDecimal.valueOf(jsonParser.getLongValue()).divide(LAT_LON_DIVISOR, 7, BigDecimal.ROUND_UNNECESSARY));
+                            builder.setLongitude(jsonParser.getLongValue() / LAT_LON_DIVISOR);
                         } else {
                             throw new ParseException("Unexpected token " + jsonParser.currentToken() + " for longitudeE7 value");
                         }
@@ -179,6 +186,10 @@ public class LocationsParser {
                 }
             }
             if (builder.isBuildable()) {
+                builtLocations++;
+                if (builtLocations % 100000 == 0) {
+                    OutUtils.verbose(builtLocations / 1000 + "K locations parsed");
+                }
                 return builder.build();
             }
         }
@@ -193,7 +204,7 @@ public class LocationsParser {
      */
     @Nullable
     public Locations getLocations(@Nullable Predicate<Location> filter) throws IOException, ParseException {
-        final TreeSet<Location> treeSet = new TreeSet<>();
+        TreeSet<Location> treeSet = new TreeSet<>();
         Location next;
         while ((next = next()) != null) {
             treeSet.add(next);
@@ -206,13 +217,16 @@ public class LocationsParser {
             location.setPrevious(previous);
             previous = location;
         }
-        Stream<Location> stream = treeSet.stream();
         if (filter != null) {
-            stream = stream.filter(filter);
+            treeSet = treeSet.stream().filter(filter).collect(Collectors.toCollection(TreeSet::new));
         }
-        return stream
-                .findFirst()
-                .map(Locations::new)
-                .orElse(null);
+        if (treeSet.isEmpty()) {
+            return null;
+        } else {
+            Location first = treeSet.first();
+            first.setPrevious(null);
+            treeSet.last().setNext(null);
+            return new Locations(first);
+        }
     }
 }

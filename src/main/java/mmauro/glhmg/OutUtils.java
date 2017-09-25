@@ -28,9 +28,7 @@ public class OutUtils {
     private static Verbosity verbosity = Verbosity.STANDARD;
 
     public static void setVerbosity(Verbosity verbosity) {
-        if (OutUtils.verbosity.canPrint(verbosity)) {
-            OutUtils.verbosity = verbosity;
-        }
+        OutUtils.verbosity = verbosity;
     }
 
     public static void println(@NotNull Verbosity verbosity, String str) {
@@ -38,6 +36,7 @@ public class OutUtils {
             System.out.println(str);
         }
     }
+
     public static void standard(String str) {
         println(Verbosity.STANDARD, str);
     }

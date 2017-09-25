@@ -1,5 +1,7 @@
 package mmauro.glhmg;
 
+import com.github.fcannizzaro.material.Colors;
+import mmauro.glhmg.datastruct.MapSize;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.DefaultParser;
 import org.apache.commons.cli.HelpFormatter;
@@ -10,39 +12,136 @@ import org.apache.commons.cli.ParseException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.awt.*;
 import java.io.File;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.Scanner;
 
 public class Main {
 
-    public static final String GOOGLE_MAPS_API_KEY = "AIzaSyAA3PAwW6LvsS61UBcRTb97wuiIQLZuS70";
-    public static final ZonedDateTime START_TIME = ZonedDateTime.of(2017, 7, 23, 5, 18, 0, 0, ZoneId.systemDefault());
-    public static final ZonedDateTime END_TIME = ZonedDateTime.of(2017, 7, 23, 6, 0, 0, 0, ZoneId.systemDefault());
-    public static final Duration GRAB_INTERVAL = Duration.ofSeconds(1);
-    public static final File LOCATION_DATA = new File("C:\\Users\\Mauro\\Desktop\\Cronologia delle posizioni.json");
-    //public static final File LOCATION_DATA = new File("C:\\Users\\Mauro\\Desktop\\posi.txt");
-    public static final File IMAGES_OUTPUT = new File("C:\\Users\\Mauro\\Desktop\\Positions");
+    @NotNull
+    public static final String DATE_TIME_FORMAT = "an ISO-8601 zoned/offset date time (e.g. 2011-12-03T10:15:30+01:00[Europe/Paris]), an ISO-8608 local date time (e.g. 2011-12-03T10:15:30) or an epoch in milliseconds (e.g. 1322903730000). If you pass a local date time your system timezone will be used";
 
+    @NotNull
+    public static final Opt<File> OPTION_LOCATION_HISTORY = Opt.<File>builder()
+            .longOpt("location-history")
+            .desc("The JSON file that contains the Google Location History information")
+            .parser(File::new)
+            .paramProvider(x -> x.locationHistoryJson)
+            .build();
 
-    public static final String DATE_TIME_FORMAT = "Format: an ISO-8601 zoned/offset date time (e.g. 2011-12-03T10:15:30+01:00[Europe/Paris]), an ISO-8608 local date time (e.g. 2011-12-03T10:15:30) or an epoch in milliseconds (e.g. 1322903730000). If you pass a local date time your system timezone will be used";
+    @NotNull
+    public static final Opt<File> OPTION_OUTPUT_DIRECTORY = Opt.<File>builder()
+            .longOpt("output-directory")
+            .desc("The directory that will contain the output files")
+            .parser(File::new)
+            .paramProvider(x -> x.outputDirectory)
+            .build();
 
+    @NotNull
+    public static final Opt<String> OPTION_API_KEY = Opt.<String>builder()
+            .longOpt("api-key")
+            .desc("The Google Static Map API Key. You can get one from https://developers.google.com/maps/documentation/static-maps/get-api-key")
+            .parser(key -> key)
+            .paramProvider(x -> x.googleStaticMapsApiKey)
+            .build();
+
+    @NotNull
+    public static final Opt<Instant> OPTION_START_TIME = Opt.<Instant>builder()
+            .longOpt("start-time")
+            .desc("The date time from which the software will start to take location data\nFormat: " + DATE_TIME_FORMAT)
+            .defValue(null)
+            .parser(Main::parseDateTime)
+            .paramProvider(x -> x.startTime)
+            .build();
+
+    @NotNull
+    public static final Opt<Instant> OPTION_END_TIME = Opt.<Instant>builder()
+            .longOpt("end-time")
+            .desc("The date time from which the software will end to take location data\nFormat: " + DATE_TIME_FORMAT)
+            .defValue(null)
+            .parser(Main::parseDateTime)
+            .paramProvider(x -> x.endTime)
+            .build();
+
+    @NotNull
+    public static final Opt<Duration> OPTION_INTERPOLATION = Opt.<Duration>builder()
+            .longOpt("interpolation")
+            .desc("An interval at which the data will be interpolated. Format: an ISO-8601 duration format: PnDTnHnMn.nS (e.g. PT10S, PT0.750S)")
+            .defValue(null)
+            .parser(Duration::parse)
+            .paramProvider(x -> x.interpolation)
+            .build();
+
+    @NotNull
+    public static final Opt<Integer> OPTION_MAP_ZOOM = Opt.<Integer>builder()
+            .longOpt("map-zoom")
+            .desc("The map zoom level. 1=world, 5=continent, 10=city, 15=streets, 20=buildings")
+            .defValue(15)
+            .parser(Integer::parseInt)
+            .paramProvider(x -> x.mapZoom)
+            .build();
+
+    @NotNull
+    public static final Opt<MapSize> OPTION_MAP_SIZE = Opt.<MapSize>builder()
+            .longOpt("map-size")
+            .desc("The map resolution (in pixels)")
+            .defValue(new MapSize(512, 512))
+            .parser(MapSize::parse)
+            .paramProvider(x -> x.mapSize)
+            .build();
+
+    @NotNull
+    public static final Opt<Integer> OPTION_MAP_SCALE = Opt.<Integer>builder()
+            .longOpt("map-scale")
+            .desc("A multiplier for the map-size value (e.g. a scale of 2 with a map-size of 512x512 will output a 1024x1024 image)")
+            .defValue(1)
+            .parser(Integer::parseInt)
+            .paramProvider(x -> x.mapScale)
+            .build();
+
+    @NotNull
+    public static final Opt<Color> OPTION_PATH_COLOR = Opt.<Color>builder()
+            .longOpt("path-color")
+            .desc("The color of the path")
+            .defValue(new Color(0, 0, 0xFF, 0x80))
+            .parser(Main::parseColor)
+            .paramProvider(x -> x.pathColor)
+            .build();
+
+    @NotNull
+    public static final Opt<Integer> OPTION_PATH_WEIGHT = Opt.<Integer>builder()
+            .longOpt("path-weight")
+            .desc("The thickness of the path")
+            .defValue(5)
+            .parser(Integer::parseInt)
+            .paramProvider(x -> x.pathWeight)
+            .build();
+
+    @NotNull
+    private static final Opt<?>[] OPTIONS = new Opt<?>[]{
+            OPTION_LOCATION_HISTORY,
+            OPTION_OUTPUT_DIRECTORY,
+            OPTION_API_KEY,
+            OPTION_START_TIME,
+            OPTION_END_TIME,
+            OPTION_INTERPOLATION,
+            OPTION_MAP_ZOOM,
+            OPTION_MAP_SIZE,
+            OPTION_MAP_SCALE,
+            OPTION_PATH_COLOR,
+            OPTION_PATH_WEIGHT
+    };
 
     public static class ExitCodes {
         public static final int ARGS_PARSE_ERROR = 1;
-
-        public static final int INVALID_VERBOSITY = 101;
-        public static final int INVALID_API_KEY = 102;
-        public static final int INVALID_DATETIME = 103;
-
-
-        public static final int MISSING_API_KEY = 201;
+        public static final int INVALID_PARAM = 2;
+        public static final int MISSING_PARAM = 3;
     }
 
     public interface Parser<R> {
@@ -73,112 +172,132 @@ public class Main {
                 final String value = commandLine.getOptionValue("verbosity");
                 OutUtils.Verbosity verbosity = OutUtils.Verbosity.parse(value);
                 if (verbosity == null) {
-                    OutUtils.err("Invalid verbosity " + value, ExitCodes.INVALID_VERBOSITY);
+                    OutUtils.err("Invalid verbosity " + value, ExitCodes.INVALID_PARAM);
                 } else {
                     OutUtils.setVerbosity(verbosity);
                 }
             }
-
-            boolean interactive = commandLine.hasOption('i');
             final Executor executor = new Executor();
-            //Params
-            if (commandLine.hasOption("api-key")) {
-                try {
-                    executor.googleStaticMapsApiKey.setValue(commandLine.getOptionValue("api-key"));
-                } catch (IllegalArgumentException e) {
-                    OutUtils.err(e.getMessage(), ExitCodes.INVALID_API_KEY);
-                }
-            } else if (!interactive) {
-                OutUtils.err("You must provide a Google Static Map API Key", ExitCodes.MISSING_API_KEY);
-            }
+            final boolean interactive = commandLine.hasOption('i');
+            final Main main = new Main(commandLine, interactive);
 
-            //Interactive
-            if (interactive) {
-                final Scanner inputScanner = new Scanner(System.in);
-
-                //Location history JSON
-                if (!executor.locationHistoryJson.hasValue()) {
-                    ask(
-                            inputScanner,
-                            File::new,
-                            executor.locationHistoryJson,
-                            "Location history JSON file",
-                            "A file location (e.g. C:\\Users\\JD\\Desktop\\locations.json",
-                            "For starters, I need to know where the Google Location History JSON is located"
-                    );
-                }
-
-                //Location history JSON
-                if (!executor.outputDirectory.hasValue()) {
-                    ask(
-                            inputScanner,
-                            File::new,
-                            executor.outputDirectory,
-                            "Output directory",
-                            "A directory location (e.g. C:\\Users\\JD\\Desktop\\Output",
-                            "I need to know where to put all the output images"
-                    );
-                }
-
-                //Api key
-                if (!executor.googleStaticMapsApiKey.hasValue()) {
-                    ask(
-                            inputScanner,
-                            key -> key,
-                            executor.googleStaticMapsApiKey,
-                            "Google Static Map API Key",
-                            "<alphanumeric_string>",
-                            "To download maps, I need a Google Static Map API Key. You can get one from https://developers.google.com/maps/documentation/static-maps/get-api-key"
-                    );
-                }
-
-                //Start date time
-                if (!executor.startTime.hasValue()) {
-                    ask(
-                            inputScanner,
-                            Main::parseDateTime,
-                            executor.startTime,
-                            "Start time",
-                            DATE_TIME_FORMAT,
-                            "If you want, you can specify the date time from which starting to take location data. Hit enter to skip it"
-                    );
-                }
-
-                //End date time
-                if (!executor.endTime.hasValue()) {
-                    ask(
-                            inputScanner,
-                            Main::parseDateTime,
-                            executor.endTime,
-                            "End time",
-                            DATE_TIME_FORMAT,
-                            "If you want, you can specify the ending date time. Hit enter to skip it"
-                    );
-                }
+            for (Opt<?> opt : OPTIONS) {
+                main.setOrAsk(opt, executor);
             }
 
             executor.execute();
         }
     }
 
-    private static <T> T ask(@NotNull Scanner inputScanner, @NotNull Parser<T> parser, @NotNull Param<T> param, @NotNull String name, @NotNull String format, @NotNull String description) {
-        System.out.println(description);
-        System.out.println("Format: " + format);
-        while (true) {
+    @NotNull
+    private final CommandLine commandLine;
+    @Nullable
+    private final Scanner inputScanner;
+
+    private Main(@NotNull CommandLine commandLine, boolean interactive) {
+        this.commandLine = commandLine;
+        this.inputScanner = interactive ? new Scanner(System.in) : null;
+    }
+
+    private <T> void setOrAsk(@NotNull Opt<T> opt, @NotNull Executor executor) {
+        final Option option = opt.getOption();
+        final String name = option.hasLongOpt() ? option.getLongOpt() : option.getOpt();
+        final Param<T> param = opt.getParam(executor);
+        if (commandLine.hasOption(name)) {
             try {
-                System.out.print(name + ": ");
-                final T parsed = parser.parse(inputScanner.nextLine());
-                System.out.println();
-                try {
-                    param.setValue(parsed);
-                    return parsed;
-                } catch (IllegalArgumentException ex) {
-                    System.out.println("Invalid input: " + ex.getMessage());
-                }
-            } catch (ParseException ex) {
-                System.out.println("Unparsable input: " + ex.getMessage());
+                param.setValue(opt.getParser().parse(commandLine.getOptionValue(name)));
+            } catch (ParseException | IllegalArgumentException e) {
+                OutUtils.err("Invalid param " + name + ": " + e.getMessage(), ExitCodes.INVALID_PARAM);
             }
+        } else if (inputScanner != null) {
+            System.out.println(option.getDescription());
+
+            while (true) {
+                try {
+
+                    final String defStr;
+                    if (opt.hasDefaultValue()) {
+                        defStr = "";
+                    } else {
+                        defStr = opt.getDefaultValueString();
+                    }
+                    System.out.print(name + defStr + ": ");
+                    final String line = inputScanner.nextLine();
+                    System.out.println();
+                    if (line.isEmpty() && opt.hasDefaultValue()) {
+                        param.setValue(opt.getDefaultValue().value);
+                        return;
+                    } else {
+                        final T parsed = opt.getParser().parse(line);
+                        try {
+                            param.setValue(parsed);
+                            return;
+                        } catch (IllegalArgumentException ex) {
+                            System.out.println("Invalid input: " + ex.getMessage());
+                        }
+                    }
+                } catch (ParseException ex) {
+                    System.out.println("Unparsable input: " + ex.getMessage());
+                }
+            }
+        } else if (opt.hasDefaultValue()) {
+            param.setValue(opt.getDefaultValue().value);
+        } else {
+            OutUtils.err("Missing param " + name, ExitCodes.MISSING_PARAM);
         }
+    }
+
+    @NotNull
+    private static Color parseColor(@NotNull String str) {
+        try {
+            return Colors.valueOf(str.replace('-', '_')).asColor();
+        } catch (IllegalArgumentException ignored) {
+        }
+        if (str.matches("^#[0-9A-Fa-f]+$")) {
+            final String hex = str.substring(1);
+            final boolean hasAlpha, single;
+
+            switch (hex.length()) {
+                case 3:
+                    hasAlpha = false;
+                    single = true;
+                    break;
+                case 4:
+                    hasAlpha = true;
+                    single = true;
+                    break;
+                case 6:
+                    hasAlpha = false;
+                    single = false;
+                    break;
+                case 8:
+                    hasAlpha = true;
+                    single = false;
+                    break;
+                default:
+                    throw new IllegalArgumentException("Invalid length for color: " + str);
+            }
+            final int[] components = new int[4]; //ARGB components
+            int i;
+            if (hasAlpha) {
+                i = 0;
+            } else {
+                components[0] = 255;
+                i = 1;
+            }
+            final int increment = single ? 1 : 2;
+            for (int strIndex = 0; i < 4; i++, strIndex += increment) {
+                if (single) {
+                    final int val = Integer.valueOf(String.valueOf(hex.charAt(strIndex)), 16);
+                    components[i] = val * 16 + val;
+                } else {
+                    components[i] = Integer.valueOf(hex.substring(strIndex, strIndex + 2), 16);
+                }
+            }
+            return new Color(components[1], components[2], components[3], components[0]);
+        }
+
+        throw new IllegalArgumentException("Invalid color: " + str);
     }
 
     @Nullable
@@ -202,15 +321,6 @@ public class Main {
         throw new ParseException("Invalid date time: " + dateTime);
     }
 
-
-    /*
-     HELP("-h", "--help", "Prints this help message"),
-            INTERACTIVE("-i", "--interactive", "Allows to insert parameters interactively. Parameters passed by argument will NOT be asked."),
-            VERBOSITY(null, "--verbosity", "Can be either SILENT, STANDARD or VERBOSE "),
-            SILENT("-s", "--silent", "Sets the verbosity to SILENT"),
-            VERBOSE("-v", "--verbose", "Sets the verbosity to VERBOSE"),
-            API_KEY(null, "--api-key", "Sets the Google Static Map API Key. You can get one from https://developers.google.com/maps/documentation/static-maps/get-api-key"),;
-     */
     @NotNull
     private static Options getOptions() {
         final Options options = new Options();
@@ -230,7 +340,9 @@ public class Main {
 
 
         options.addOption(Option.builder("i").longOpt("interactive").desc("Allows to insert parameters interactively. Parameters passed by argument will NOT be asked").build());
-        options.addOption(Option.builder().longOpt("api-key").hasArg(true).argName("key").desc("Sets the Google Static Map API Key. You can get one from https://developers.google.com/maps/documentation/static-maps/get-api-key").build());
+        for (Opt<?> opt : OPTIONS) {
+            options.addOption(opt.getOption());
+        }
 
         return options;
     }
