@@ -2,6 +2,7 @@ package mmauro.glhmg;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParseException;
+import mmauro.glhmg.datastruct.Corrections;
 import mmauro.glhmg.datastruct.Location;
 import mmauro.glhmg.datastruct.Locations;
 import mmauro.glhmg.datastruct.MapParams;
@@ -84,6 +85,7 @@ public class Executor {
             throw new IllegalArgumentException("PathWeight must be greater than zero");
         }
     });
+    public Param<Corrections> coordinateCorrections = new Param<>();
 
     //@NotNull Location location, int zoom, int sizeWidth, int sizeHeight, int scale, @NotNull Color pathColor, int pathWeight
 
@@ -92,7 +94,7 @@ public class Executor {
         final Locations locations;
         try {
             locations = new LocationsParser(new JsonFactory().createParser(locationHistoryJson.getValue())).getLocations(location ->
-                    (startTime.isNull() || location.getTimestamp().compareTo(startTime.getValue()) >= 0) && (endTime.isNull() || location.getTimestamp().compareTo(endTime.getValue()) <= 0)
+                    (startTime.isNull() || location.getTimestamp().compareTo(startTime.getValue()) >= 0) && (endTime.isNull() || location.getTimestamp().compareTo(endTime.getValue()) <= 0) && !coordinateCorrections.getValue().has(location.getTimestamp())
             );
         } catch (ParseException | JsonParseException e) {
             OutUtils.err("There has been an error parsing the provided JSON file: " + e.getMessage(), 1, e);
@@ -115,8 +117,11 @@ public class Executor {
         }
 
         final PathParams pathParams = new PathParams(pathColor.getValue(), pathWeight.getValue());
+        System.out.println();
+        int i = 1;
         for (Location location : withInterpolation) {
             final MapParams mapParams = new MapParams(location, mapSize.getValue(), mapZoom.getValue(), mapScale.getValue());
+            OutUtils.standard("Downloading image " + i++ + "/" + withInterpolation.size() + "...");
             try {
                 Utils.downloadImage(googleStaticMapsApiKey.getValue(), outputDirectory.getValue(), mapParams, pathParams);
             } catch (IOException e) {

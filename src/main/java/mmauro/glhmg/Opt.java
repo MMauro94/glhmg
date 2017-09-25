@@ -55,6 +55,7 @@ public final class Opt<T> {
         return defaultValue;
     }
 
+
     @Contract(pure = true)
     public boolean hasDefaultValue() {
         return defaultValue != null;
@@ -63,7 +64,11 @@ public final class Opt<T> {
     @Contract(pure = true)
     @NotNull
     public String getDefaultValueString() {
-        return getDefaultValueString(getDefaultValue());
+        if (defaultValue == null) {
+            throw new IllegalStateException("no default value");
+        } else {
+            return getDefaultValueString(defaultValue);
+        }
     }
 
     @NotNull

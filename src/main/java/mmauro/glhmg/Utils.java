@@ -2,11 +2,14 @@ package mmauro.glhmg;
 
 import mmauro.glhmg.datastruct.MapParams;
 import mmauro.glhmg.datastruct.PathParams;
+import org.apache.commons.cli.ParseException;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.awt.*;
 import java.io.File;
+import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
@@ -14,9 +17,14 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.file.Files;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
+import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoField;
 import java.util.HashMap;
 import java.util.Map;
@@ -66,7 +74,7 @@ public class Utils {
             urlStr.append('=');
             urlStr.append(URLEncoder.encode(entry.getValue(), "UTF-8"));
         }
-        System.out.println(urlStr.toString());
+        OutUtils.verbose(urlStr.toString());
         try {
             return (HttpURLConnection) new URL(urlStr.toString()).openConnection();
         } catch (MalformedURLException e) {
@@ -79,8 +87,19 @@ public class Utils {
         return String.format("%02X%02X%02X%02X", color.getRed(), color.getGreen(), color.getBlue(), color.getAlpha());
     }
 
-    static int i=0;
+    static int i = 0;
+
     public static void downloadImage(@NotNull String apiKey, @NotNull File outDir, @NotNull MapParams mapParams, @NotNull PathParams pathParams) throws IOException {
+        final String filenameWithoutExtension = mapParams.getLocation().getTimestamp().atOffset(ZoneOffset.UTC).format(OUTPUT_FORMATTER);
+        File[] files = outDir.listFiles((dir, name) -> {
+            int endIndex = name.lastIndexOf('.');
+            return name.substring(0, endIndex < 0 ? name.length() : endIndex).equals(filenameWithoutExtension);
+        });
+        if (files == null || files.length > 0) {
+            OutUtils.warn("File " + filenameWithoutExtension + ".* already exists, skipping");
+            return;
+        }
+
         final HashMap<String, String> params = new HashMap<>();
         params.put("center", mapParams.getLocation().getGoogleApiLatLon());
         params.put("zoom", String.valueOf(mapParams.getZoom()));
@@ -99,7 +118,7 @@ public class Utils {
         } else if (!split[0].equals("image")) {
             throw new IOException("Invalid content type: " + contentType);
         }
-        final File outFile = new File(outDir, mapParams.getLocation().getTimestamp().atOffset(ZoneOffset.UTC).format(OUTPUT_FORMATTER) + "." + split[1]);
+        final File outFile = new File(outDir, filenameWithoutExtension + "." + split[1]);
         try (final InputStream inputStream = request.getInputStream()) {
             Files.copy(inputStream, outFile.toPath());
         }
@@ -109,5 +128,26 @@ public class Utils {
     public static int degreesDistance(int a, int b) {
         int phi = Math.abs(b - a) % 360; // This is either the distance or 360 - distance
         return phi > 180 ? 360 - phi : phi;
+    }
+
+    @Nullable
+    public static Instant parseDateTime(@NotNull String dateTime) throws ParseException {
+        if (dateTime.trim().isEmpty()) {
+            return null;
+        } else {
+            try {
+                return ZonedDateTime.parse(dateTime).toInstant();
+            } catch (DateTimeParseException ignored) {
+            }
+            try {
+                return LocalDateTime.parse(dateTime).toInstant(OffsetDateTime.now().getOffset());
+            } catch (DateTimeParseException ignored) {
+            }
+            try {
+                return Instant.ofEpochMilli(Long.parseLong(dateTime));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        throw new ParseException("Invalid date time: " + dateTime);
     }
 }

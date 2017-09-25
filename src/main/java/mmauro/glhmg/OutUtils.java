@@ -49,6 +49,10 @@ public class OutUtils {
         err(str, status, null);
     }
 
+    public static void warn(String str) {
+        println(Verbosity.STANDARD, "[WARN] " + str);
+    }
+
     public static void err(String str, int status, @Nullable Throwable throwable) {
         System.out.println("ERROR: " + str);
         if (throwable != null) {

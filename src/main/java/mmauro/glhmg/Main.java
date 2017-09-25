@@ -1,6 +1,7 @@
 package mmauro.glhmg;
 
 import com.github.fcannizzaro.material.Colors;
+import mmauro.glhmg.datastruct.Corrections;
 import mmauro.glhmg.datastruct.MapSize;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.DefaultParser;
@@ -16,10 +17,7 @@ import java.awt.*;
 import java.io.File;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeParseException;
+import java.util.Objects;
 import java.util.Scanner;
 
 public class Main {
@@ -56,7 +54,7 @@ public class Main {
             .longOpt("start-time")
             .desc("The date time from which the software will start to take location data\nFormat: " + DATE_TIME_FORMAT)
             .defValue(null)
-            .parser(Main::parseDateTime)
+            .parser(Utils::parseDateTime)
             .paramProvider(x -> x.startTime)
             .build();
 
@@ -65,7 +63,7 @@ public class Main {
             .longOpt("end-time")
             .desc("The date time from which the software will end to take location data\nFormat: " + DATE_TIME_FORMAT)
             .defValue(null)
-            .parser(Main::parseDateTime)
+            .parser(Utils::parseDateTime)
             .paramProvider(x -> x.endTime)
             .build();
 
@@ -124,6 +122,15 @@ public class Main {
             .build();
 
     @NotNull
+    public static final Opt<Corrections> OPTION_COORDINATE_CORRECTIONS = Opt.<Corrections>builder()
+            .longOpt("coordinate-corrections")
+            .desc("Removes the given comma separated coordinates times from the path (useful if there are some outsider coordinates)")
+            .defValue(null)
+            .parser(Corrections::parse)
+            .paramProvider(x -> x.coordinateCorrections)
+            .build();
+
+    @NotNull
     private static final Opt<?>[] OPTIONS = new Opt<?>[]{
             OPTION_LOCATION_HISTORY,
             OPTION_OUTPUT_DIRECTORY,
@@ -135,7 +142,8 @@ public class Main {
             OPTION_MAP_SIZE,
             OPTION_MAP_SCALE,
             OPTION_PATH_COLOR,
-            OPTION_PATH_WEIGHT
+            OPTION_PATH_WEIGHT,
+            OPTION_COORDINATE_CORRECTIONS
     };
 
     public static class ExitCodes {
@@ -211,10 +219,11 @@ public class Main {
             }
         } else if (inputScanner != null) {
             System.out.println(option.getDescription());
-
+            if(option.hasArgs()) {
+                System.out.println("You can pass how many values you want. Empty to end");
+            }
             while (true) {
                 try {
-
                     final String defStr;
                     if (opt.hasDefaultValue()) {
                         defStr = "";
@@ -222,19 +231,10 @@ public class Main {
                         defStr = opt.getDefaultValueString();
                     }
                     System.out.print(name + defStr + ": ");
-                    final String line = inputScanner.nextLine();
-                    System.out.println();
-                    if (line.isEmpty() && opt.hasDefaultValue()) {
+                    if (parseValue(opt, param)) {
+
+                    } else if(!option.hasArgs() && opt.hasDefaultValue()) {
                         param.setValue(opt.getDefaultValue().value);
-                        return;
-                    } else {
-                        final T parsed = opt.getParser().parse(line);
-                        try {
-                            param.setValue(parsed);
-                            return;
-                        } catch (IllegalArgumentException ex) {
-                            System.out.println("Invalid input: " + ex.getMessage());
-                        }
                     }
                 } catch (ParseException ex) {
                     System.out.println("Unparsable input: " + ex.getMessage());
@@ -245,6 +245,25 @@ public class Main {
         } else {
             OutUtils.err("Missing param " + name, ExitCodes.MISSING_PARAM);
         }
+    }
+
+    private <T> boolean parseValue(@NotNull Opt<T> opt, Param<T> param) throws ParseException {
+        Objects.requireNonNull(inputScanner);
+
+        final String line = inputScanner.nextLine();
+        System.out.println();
+        if (line.isEmpty()) {
+            return false;
+        } else {
+            final T parsed = opt.getParser().parse(line);
+            try {
+                param.setValue(parsed);
+                return true;
+            } catch (IllegalArgumentException ex) {
+                System.out.println("Invalid input: " + ex.getMessage());
+            }
+        }
+        return false;
     }
 
     @NotNull
@@ -298,27 +317,6 @@ public class Main {
         }
 
         throw new IllegalArgumentException("Invalid color: " + str);
-    }
-
-    @Nullable
-    private static Instant parseDateTime(@NotNull String dateTime) throws ParseException {
-        if (dateTime.trim().isEmpty()) {
-            return null;
-        } else {
-            try {
-                return ZonedDateTime.parse(dateTime).toInstant();
-            } catch (DateTimeParseException ignored) {
-            }
-            try {
-                return LocalDateTime.parse(dateTime).toInstant(OffsetDateTime.now().getOffset());
-            } catch (DateTimeParseException ignored) {
-            }
-            try {
-                return Instant.ofEpochMilli(Long.parseLong(dateTime));
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        throw new ParseException("Invalid date time: " + dateTime);
     }
 
     @NotNull

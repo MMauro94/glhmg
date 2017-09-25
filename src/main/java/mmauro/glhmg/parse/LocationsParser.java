@@ -3,6 +3,7 @@ package mmauro.glhmg.parse;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import mmauro.glhmg.OutUtils;
+import mmauro.glhmg.datastruct.Corrections;
 import mmauro.glhmg.datastruct.Location;
 import mmauro.glhmg.datastruct.Locations;
 import org.jetbrains.annotations.NotNull;
@@ -209,6 +210,9 @@ public class LocationsParser {
         while ((next = next()) != null) {
             treeSet.add(next);
         }
+        if (filter != null) {
+            treeSet = treeSet.stream().filter(filter).collect(Collectors.toCollection(TreeSet::new));
+        }
         Location previous = null;
         for (Location location : treeSet) {
             if (previous != null) {
@@ -216,9 +220,6 @@ public class LocationsParser {
             }
             location.setPrevious(previous);
             previous = location;
-        }
-        if (filter != null) {
-            treeSet = treeSet.stream().filter(filter).collect(Collectors.toCollection(TreeSet::new));
         }
         if (treeSet.isEmpty()) {
             return null;
