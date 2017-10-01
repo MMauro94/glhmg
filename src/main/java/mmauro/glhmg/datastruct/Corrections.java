@@ -11,6 +11,8 @@ import java.util.Set;
 
 public class Corrections {
 
+    public static final Corrections EMPTY = new Corrections(new HashSet<>(0));
+
     @NotNull
     private final Set<Instant> instants;
 

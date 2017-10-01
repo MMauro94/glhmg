@@ -125,7 +125,7 @@ public class Main {
     public static final Opt<Corrections> OPTION_COORDINATE_CORRECTIONS = Opt.<Corrections>builder()
             .longOpt("coordinate-corrections")
             .desc("Removes the given comma separated coordinates times from the path (useful if there are some outsider coordinates)")
-            .defValue(null)
+            .defValue(Corrections.EMPTY)
             .parser(Corrections::parse)
             .paramProvider(x -> x.coordinateCorrections)
             .build();
