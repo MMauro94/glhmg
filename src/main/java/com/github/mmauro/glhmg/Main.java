@@ -230,6 +230,7 @@ public class Main {
 					} else {
 						defStr = opt.getDefaultValueString();
 					}
+					//TODO: Check this code, it looks suspicious
 					System.out.print(name + defStr + ": ");
 					if (parseValue(opt, param)) {
 
