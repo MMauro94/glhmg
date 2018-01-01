@@ -4,7 +4,7 @@ This tools lets you generate a series of maps images of a road trip, excursion, 
 ## Example
 An example image:
 
-![Example](https://github.com/MMauro94/glhmg/exampleMap.png)
+![Example](https://raw.githubusercontent.com/MMauro94/glhmg/master/exampleMap.png)
 
 ## Step-by-step guide
 
