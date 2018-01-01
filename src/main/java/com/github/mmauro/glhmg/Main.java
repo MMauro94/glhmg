@@ -13,7 +13,7 @@ import org.apache.commons.cli.ParseException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.awt.Color;
+import java.awt.*;
 import java.io.File;
 import java.time.Duration;
 import java.time.Instant;
@@ -225,15 +225,16 @@ public class Main {
 			while (true) {
 				try {
 					final String defStr;
-					if (opt.hasDefaultValue()) {
+					if (!opt.hasDefaultValue()) {
 						defStr = "";
 					} else {
-						defStr = opt.getDefaultValueString();
+						defStr = " [" + opt.getDefaultValueString() + "]";
 					}
-					//TODO: Check this code, it looks suspicious
+					//TODO: optionals not working
+					//TODO: illegalarg with invalid color
 					System.out.print(name + defStr + ": ");
 					if (parseValue(opt, param)) {
-
+						break;
 					} else if (!option.hasArgs() && opt.hasDefaultValue()) {
 						param.setValue(opt.getDefaultValue().getValue());
 					}
